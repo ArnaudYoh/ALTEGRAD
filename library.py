@@ -10,11 +10,11 @@ from nltk import pos_tag # nltk.download('maxent_treebank_pos_tagger')
 
 def clean_text_simple(text, my_stopwords, punct, remove_stopwords=True, pos_filtering=True, stemming=True):
     text = text.lower()
-    text = ''.join(l for l in text if l not in punct) # remove punctuation (preserving intra-word dashes)
-    text = re.sub(' +',' ',text) # strip extra white space
-    text = text.strip() # strip leading and trailing white space
-    tokens = text.split(' ') # tokenize (split based on whitespace)
-    if pos_filtering == True:
+    text = ''.join(l for l in text if l not in punct)  # remove punctuation (preserving intra-word dashes)
+    text = re.sub(' +', ' ', text)  # strip extra white space
+    text = text.strip()  # strip leading and trailing white space
+    tokens = text.split(' ')  # tokenize (split based on whitespace)
+    if pos_filtering:
         # POS-tag and retain only nouns and adjectives
         tagged_tokens = pos_tag(tokens)
         tokens_keep = []
@@ -38,15 +38,14 @@ def clean_text_simple(text, my_stopwords, punct, remove_stopwords=True, pos_filt
         for token in tokens:
             tokens_stemmed.append(stemmer.stem(token))
         tokens = tokens_stemmed
-    
     return tokens
 
 
 def terms_to_graph(terms, window_size):
-    '''This function returns a directed, weighted igraph from lists of list of terms (the tokens from the pre-processed text)
+    """This function returns a directed, weighted igraph from lists of list of terms (the tokens from the pre-processed text)
     e.g., ['quick','brown','fox']
-    Edges are weighted based on term co-occurence within a sliding window of fixed size 'w'
-    '''
+    Edges are weighted based on term co-occurrence within a sliding window of fixed size 'w'
+    """
     
     from_to = {}
 
@@ -60,10 +59,7 @@ def terms_to_graph(terms, window_size):
     for my_tuple in indexes:
         new_edges.append(tuple([terms_temp[i] for i in my_tuple]))
     for new_edge in new_edges:
-        if new_edge in from_to:
-            from_to[new_edge] += 1
-        else:
-            from_to[new_edge] = 1
+        from_to[new_edge] = from_to.get(new_edge, 0) + 1
 
     # then iterate over the remaining terms
     for i in range(w, len(terms)):
@@ -81,14 +77,7 @@ def terms_to_graph(terms, window_size):
 
             # if not self-edge
             if try_edge[1] != try_edge[0]:
-
-                # if edge has already been seen, update its weight
-                if try_edge in from_to:
-                    from_to[try_edge] += 1
-
-                # if edge has never been seen, create it and assign it a unit weight
-                else:
-                    from_to[try_edge] = 1
+                from_to[try_edge] = from_to.get(try_edge, 0) + 1
 
     # create empty graph
     g = igraph.Graph(directed=True)
@@ -106,9 +95,10 @@ def terms_to_graph(terms, window_size):
     return g
 
 
-def core_dec(g,weighted):
-    '''(un)weighted k-core decomposition'''
-    # work on clone of g to preserve g 
+def core_dec(g, weighted):
+    """(un)weighted k-core decomposition"""
+
+    # work on clone of g to preserve g
     gg = copy.deepcopy(g)
     if not weighted:
         gg.vs['weight'] = gg.strength() # overwrite the 'weight' vertex attribute with the unweighted degrees
@@ -126,19 +116,19 @@ def core_dec(g,weighted):
         neighbors = [elt for elt in neighbors if elt!=name_top]
         # set core number of lowest degree vertex as its degree
         cores_g[name_top] = min_degree
-        ### fill the gap (delete top vertex and its incident edges) ###
+        gg.delete_vertices(name_top)
         
         if neighbors:
-            if weighted: 
-                ### fill the gap (compute the new weighted degrees, save results as 'new_degrees')
+            if weighted:
+                new_degrees = gg.strength(weights=gg.es['weight'])
             else:
-                ### fill the gap (same as above but for the basic degree) ###
+                new_degrees = gg.strength()
             # iterate over neighbors of top element
             for neigh in neighbors:
                 index_n = gg.vs['name'].index(neigh)
-                gg.vs[index_n]['weight'] = max(min_degree,new_degrees[index_n])  
+                gg.vs[index_n]['weight'] = max(min_degree, new_degrees[index_n])
         
-    return(cores_g)
+    return cores_g
 
 
 def accuracy_metrics(candidate, truth):
@@ -147,14 +137,15 @@ def accuracy_metrics(candidate, truth):
     
     # false positives a.k.a. false alarms are in candidate but not in truth
     fp = len([element for element in candidate if element not in truth])
-    
-    ### fill the gap (compute false negatives a.k.a. misses, save results as 'fn')
-    
-    ### fill the gaps (compute precision and recall as a function of 'tp', 'fp' and 'fn', save results as 'prec' and 'rec') ###
-    
+
+    fn = len([element for element in truth if element not in candidate])
+
+    prec = (tp + 1) / (tp + fp + 1)
+    rec = (tp + 1) / (tp + fn + 1)
+
     if prec+rec != 0:
         f1 = 2*prec*rec/(prec+rec)
     else:
         f1 = 0
     
-    return (prec, rec, f1)
+    return prec, rec, f1

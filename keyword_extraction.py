@@ -17,7 +17,7 @@ punct = string.punctuation.replace('-', '')
 # read and pre-process abstracts #
 ##################################
 
-path_to_abstracts = "./data/abstracts"
+path_to_abstracts = "./data/abstracts/"
 abstract_names = sorted(os.listdir(path_to_abstracts))
 
 abstracts = []
@@ -35,7 +35,7 @@ for counter,filename in enumerate(abstract_names):
 
 abstracts_cleaned = []
 for counter,abstract in enumerate(abstracts):
-    my_tokens = clean_text_simple(abstract,my_stopwords=stpwds,punct=punct)
+    my_tokens = clean_text_simple(abstract, my_stopwords=stpwds, punct=punct)
     abstracts_cleaned.append(my_tokens)
     
     if counter % round(len(abstracts)/5) == 0:
@@ -45,7 +45,7 @@ for counter,abstract in enumerate(abstracts):
 # read and pre-process gold standard keywords #
 ###############################################
 
-path_to_keywords = ### fill me! ###
+path_to_keywords = "./data/uncontr/"
 keywd_names = sorted(os.listdir(path_to_keywords))
    
 keywds_gold_standard = []
@@ -74,6 +74,7 @@ for counter,filename in enumerate(keywd_names):
 # precompute graphs-of-words #
 ##############################
 
+gs = [terms_to_graph(token, window_size=4) for token in abstracts_cleaned]
 ### fill the gap (use the terms_to_graph function, store the results in a list named 'gs') ###
 
 ##################################
@@ -88,9 +89,12 @@ keywords = dict(zip(method_names,[[],[],[],[]]))
 for counter,g in enumerate(gs):
     # k-core
     core_numbers = core_dec(g,False)
+    keywords['kc'].append([keyword for keyword, value in core_numbers.items() if value >= max(core_numbers.values())])
     ### fill the gaps (retain main core as keywords and append the resulting list to 'keywords['kc']') ###
-    
+
     # weighted k-core
+    weighted_core_numbers = core_dec(g, True)
+    keywords['wkc'].append([keyword for keyword, value in core_numbers.items() if value >= max(core_numbers.values())])
     ### fill the gaps (repeat the procedure used for k-core) ###
     
     # PageRank
@@ -108,12 +112,14 @@ for counter,g in enumerate(gs):
 
 abstracts_cleaned_strings = [' '.join(elt) for elt in abstracts_cleaned] # to ensure same pre-processing as the other methods
 tfidf_vectorizer = TfidfVectorizer(stop_words=stpwds)
-### fill the gap (call the .fit_transform() method and name the result 'doc_term_matrix') ###
+doc_term_matrix = tfidf_vectorizer.fit_transform(abstracts_cleaned_strings, keywds_gold_standard)
 terms = tfidf_vectorizer.get_feature_names()
 vectors_list = doc_term_matrix.todense().tolist()
 
-for counter,vector in enumerate(vectors_list):
-    terms_weights = zip(terms,vector) # bow feature vector as list of tuples
+for counter, vector in enumerate(vectors_list):
+    terms_weights = zip(terms, vector) # bow feature vector as list of tuples
+    terms_weights = list(terms_weights)
+    nonzero = [terms for (term, weight) in terms_weights if weight > 0]
     ### fill the gap (keep only non zero values, i.e., the words in the document. store the results in a list named 'nonzero') ###
     nonzero = sorted(nonzero, key=operator.itemgetter(1), reverse=True) # in decreasing order
     numb_to_retain = int(len(nonzero)*my_percentage) # retain top 'my_percentage' % words as keywords
@@ -128,14 +134,15 @@ for counter,vector in enumerate(vectors_list):
 
 perf = dict(zip(method_names,[[],[],[],[]]))
 
-for idx,truth in enumerate(keywds_gold_standard):
+for idx, truth in enumerate(keywds_gold_standard):
     for mn in method_names:
+        perf[mn].append(accuracy_metrics(candidate=keywords[mn][idx], truth=truth))
         ### fill the gap (append to the 'perf[mn]' list by using the 'accuracy_metrics' function) ###
 
 lkgs = len(keywds_gold_standard)
 
 # print macro-averaged results (averaged at the collection level)
-for k,v in perf.items():
+for k, v in perf.items():
     print(k + ' performance: \n')
     print('precision:', round(100*sum([tuple[0] for tuple in v])/lkgs,2))
     print('recall:', round(100*sum([tuple[1] for tuple in v])/lkgs,2))

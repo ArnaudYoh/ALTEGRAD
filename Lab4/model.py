@@ -21,10 +21,8 @@ class Encoder(nn.Module):
         self.hidden_dim = hidden_dim
 
     def forward(self, input):
-        # current_batch_size = input.size(1)
         embedded_input = self.embedding(input)
         hs, _ = self.rnn(embedded_input)
-        # hs = output.reshape((-1, current_batch_size, self.hidden_dim))
         # fill the gaps # (transform input into embeddings and pass embeddings to RNN)
         # you should return a tensor of shape (seq,batch,feat)
         return hs
@@ -45,8 +43,8 @@ class seq2seqAtt(nn.Module):
         target_h_rep = target_h.repeat(source_hs.size(0), 1, 1)  # (1,batch,feat) -> (seq,batch,feat)
         # fill the gaps #
         # implement the score computation part of the concat formulation (see section 3.1. of Luong 2015)
-        concat_output =
-        scores =  # should be of shape (seq,batch,1)
+        concat_output = torch.tanh((self.ff_concat(torch.cat((target_h_rep, source_hs), dim=2))))
+        scores = self.ff_score(concat_output)
         scores = scores.squeeze(
             dim=2)  # (seq,batch,1) -> (seq,batch). dim=2 because we don't want to squeeze the batch dim if batch size = 1
         norm_scores = torch.softmax(scores, 0)
@@ -72,11 +70,11 @@ class Decoder(nn.Module):
     def forward(self, input, source_context, h):
         # fill the gaps #
         embedded_input = self.embedding(input)
-        _, h = self.rnn(embedded_input, h)
-        tilde_h = nn.functional.tanh(self.ff_concat(torch.cat((h, source_context), dim=1)))
-        prediction = self.predict(tilde_h)
-        # transform input into embeddings, pass embeddings to RNN, concatenate with source_context and apply tanh, and make the prediction
-        # prediction should be of shape (1,batch,vocab), h and tilde_h of shape (1,batch,feat)
+        hs, h = self.rnn(embedded_input, h)
+        tilde_h = torch.tanh(self.ff_concat(torch.cat((source_context, h), dim=2)))
+        prediction = torch.softmax(self.predict(tilde_h), dim=2)
+        # transform input into embeddings, pass embeddings to RNN, concatenate with source_context and apply tanh,
+        # and make the prediction prediction should be of shape (1,batch,vocab), h and tilde_h of shape (1,batch,feat)
         return prediction, h
 
 
@@ -114,6 +112,7 @@ class seq2seqModel(nn.Module):
         print('target vocab size', len(vocab_t_inv))
 
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        print(self.device)
 
         self.encoder = Encoder(self.max_source_idx + 1, self.embedding_dim_s, self.hidden_dim_s, self.padding_token).to(
             self.device)
@@ -143,7 +142,7 @@ class seq2seqModel(nn.Module):
 
         # fill the gap #
         # use the encoder
-        source_hs =
+        source_hs = self.encoder(input)
 
         # = = = decoder part (one timestep at a time)  = = =
 
@@ -151,7 +150,7 @@ class seq2seqModel(nn.Module):
 
         # fill the gap #
         # (initialize target_input with the proper token)
-        target_input = torch.LongTensor([]).repeat(current_batch_size).unsqueeze(0).to(self.device)  # init (1,batch)
+        target_input = torch.LongTensor([2]).repeat(current_batch_size).unsqueeze(0).to(self.device)  # init (1,batch)
 
         pos = 0
         eos_counter = 0
@@ -166,13 +165,12 @@ class seq2seqModel(nn.Module):
 
             # fill the gap #
             # use the decoder
-            prediction, target_h =
-
+            prediction, target_h = self.decoder(target_input, source_context, target_h)
             logits.append(prediction)  # (1,batch,vocab)
 
             # fill the gap #
             # get the next input to pass the decoder
-            target_input =
+            _, target_input = torch.max(prediction, 2)
 
             eos_counter += torch.sum(target_input == self.eos_token).item()
 

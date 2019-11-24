@@ -6,7 +6,7 @@ from torch.utils import data
 
 # = = = = = = = = = = =
 
-path_root = "."
+path_root = "./"
 
 path_to_model = path_root + '/code/'
 sys.path.insert(0, path_to_model)
@@ -42,7 +42,7 @@ def load_pairs(train_or_test):
 # = = = = = = = = = = =
 
 do_att = True # should always be set to True
-is_prod = False # production mode or not
+is_prod = True # production mode or not
 
 if not is_prod:
         

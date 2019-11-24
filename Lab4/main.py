@@ -6,7 +6,7 @@ from torch.utils import data
 
 # = = = = = = = = = = =
 
-path_root = # fill me !
+path_root = "."
 
 path_to_model = path_root + '/code/'
 sys.path.insert(0, path_to_model)

@@ -1,3 +1,7 @@
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import matplotlib
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -50,10 +54,10 @@ class seq2seqAtt(nn.Module):
         norm_scores = torch.softmax(scores, 0)
         source_hs_p = source_hs.permute((2, 0, 1))  # (seq,batch,feat) -> (feat,seq,batch)
         weighted_source_hs = (
-                    norm_scores * source_hs_p)  # (seq,batch) * (feat,seq,batch) (* checks from right to left that the dimensions match)
+                norm_scores * source_hs_p)  # (seq,batch) * (feat,seq,batch) (* checks from right to left that the dimensions match)
         ct = torch.sum(weighted_source_hs.permute((1, 2, 0)), 0,
                        keepdim=True)  # (feat,seq,batch) -> (seq,batch,feat) -> (1,batch,feat); keepdim otherwise sum squeezes
-        return ct
+        return ct, norm_scores
 
 
 class Decoder(nn.Module):
@@ -72,7 +76,7 @@ class Decoder(nn.Module):
         embedded_input = self.embedding(input)
         hs, h = self.rnn(embedded_input, h)
         tilde_h = torch.tanh(self.ff_concat(torch.cat((source_context, h), dim=2)))
-        prediction = torch.softmax(self.predict(tilde_h), dim=2)
+        prediction = self.predict(tilde_h)
         # transform input into embeddings, pass embeddings to RNN, concatenate with source_context and apply tanh,
         # and make the prediction prediction should be of shape (1,batch,vocab), h and tilde_h of shape (1,batch,feat)
         return prediction, h
@@ -155,11 +159,13 @@ class seq2seqModel(nn.Module):
         pos = 0
         eos_counter = 0
         logits = []
+        scores = []
 
         while True:
 
             if self.do_att:
-                source_context = self.att_mech(target_h, source_hs)  # (1,batch,feat)
+                source_context, score = self.att_mech(target_h, source_hs)  # (1,batch,feat)
+                scores.append(score.squeeze().cpu().detach().numpy())
             else:
                 source_context = source_hs[-1, :, :].unsqueeze(0)  # (1,batch,feat) last hidden state of encoder
 
@@ -183,7 +189,7 @@ class seq2seqModel(nn.Module):
         if is_prod:
             to_return = to_return.squeeze(dim=1)  # (seq,vocab)
 
-        return to_return
+        return to_return, scores
 
     def fit(self, trainingDataset, testDataset, lr, batch_size, n_epochs, patience):
 
@@ -234,7 +240,7 @@ class seq2seqModel(nn.Module):
                             max_size = batch_target.size(
                                 0)  # no need to continue generating after we've exceeded the length of the longest ground truth sequence
 
-                        unnormalized_logits = self.forward(batch_source, max_size, is_prod)
+                        unnormalized_logits, _ = self.forward(batch_source, max_size, is_prod)
 
                         sentence_loss = criterion(unnormalized_logits.flatten(end_dim=1), batch_target.flatten())
 
@@ -277,9 +283,34 @@ class seq2seqModel(nn.Module):
 
     def predict(self, source_nl):
         source_ints = self.sourceNl_to_ints(source_nl)
-        logits = self.forward(source_ints, self.max_size, True)  # (seq) -> (<=max_size,vocab)
+        logits, _ = self.forward(source_ints, self.max_size, True)  # (seq) -> (<=max_size,vocab)
         target_ints = logits.argmax(-1).squeeze()  # (<=max_size,1) -> (<=max_size)
         target_nl = self.targetInts_to_nl(target_ints.tolist())
+        return ' '.join(target_nl)
+
+    def predict_and_show_attention(self, source_nl, idx):
+        source_ints = self.sourceNl_to_ints(source_nl)
+        logits, scores = self.forward(source_ints, self.max_size, True)  # (seq) -> (<=max_size,vocab)
+        target_ints = logits.argmax(-1).squeeze()  # (<=max_size,1) -> (<=max_size)
+        target_nl = self.targetInts_to_nl(target_ints.tolist())
+
+        font = {'family': 'normal',
+                'weight': 'bold',
+                'size': 13}
+
+        matplotlib.rc('font', **font)
+
+        fig = plt.figure(figsize=(6, 7))
+        ax = fig.add_subplot(111)
+        cax = ax.matshow(np.array(scores[:10]))
+        fig.colorbar(cax)
+        source_arr = source_nl.split()
+        ax.set_xticklabels([''] + [x for x in source_arr])
+        ax.set_yticklabels([''] + [x for x in target_nl])
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(1))
+        ax.yaxis.set_major_locator(ticker.MultipleLocator(1))
+        plt.savefig('attention' + str(idx) + '.pdf')
+
         return ' '.join(target_nl)
 
     def save(self, path_to_file):

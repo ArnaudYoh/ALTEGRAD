@@ -21,6 +21,9 @@ n_dim = 128
 n_walks = 10
 walk_length = 20
 
+model = deepwalk(G, n_walks, walk_length, n_dim)
+
+
 ##################
 # your code here #
 ##################
@@ -30,7 +33,8 @@ walk_length = 20
 # Visualizes the representations of the 100 nodes that appear most frequently in the generated walks
 def visualize(model, n, dim):
     
-    nodes = # your code here
+    nodes = model.wv.index2entity[:n] # your code here
+    print(nodes)
     vecs = np.empty(shape=(n, dim))
     
     ##################

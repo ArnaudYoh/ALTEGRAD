@@ -4,11 +4,19 @@ Deep Learning on Graphs - ALTEGRAD - Dec 2019
 
 import scipy.sparse as sp
 import numpy as np
+from numpy.linalg import inv
 
 
 def normalize_adjacency(A):
     ############## Task 9
-    
+    n = A.shape[0]
+    A_bar = A + np.eye(A.shape[0])
+    b = np.sum(A_bar, axis=0)
+    b = [b[0,i] for i in range(n)]
+    D = np.diag(b)
+    D_bar = inv(np.sqrt(D))
+
+    A_normalized = D_bar.dot(A_bar).dot(D_bar)
     ##################
     # your code here #
     ##################

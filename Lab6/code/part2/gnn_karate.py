@@ -10,8 +10,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 from sklearn.metrics import accuracy_score, log_loss
 
-from .utils import accuracy, normalize_adjacency
-from .models import GNN
+from utils import accuracy, normalize_adjacency
+from models import GNN
 
 # Hyperparameters
 epochs = 100

@@ -19,9 +19,17 @@ class GNN(nn.Module):
 
     def forward(self, x_in, adj):
         ############## Tasks 10 and 13
-        
+        out = self.fc1(adj.mm(x_in))
+        out = self.relu(out)
+        out = self.dropout(out)
+
+        out = self.fc2(adj.mm(out))
+        out = self.relu(out)
+
+        out = self.fc3(adj.mm(out))
+
         ##################
         # your code here #
         ##################
 
-        return F.log_softmax(x, dim=1)
+        return F.log_softmax(out, dim=1)

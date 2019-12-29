@@ -24,10 +24,10 @@ k = 50
 
 def spectral_clustering(G, k):
     L = nx.laplacian_matrix(G).astype('float')
-    eig_val, eig_vec = eigs(L)
+    eig_val, eig_vec = eigs(L, k=3, which='SR')
 
-    eig_val = eig_val.real  # Keep the real part
-    eig_vec = eig_vec.real  # Keep the real part
+    eig_val = eig_val.real
+    eig_vec = eig_vec.real
 
     idx = eig_val.argsort()  # Get indices of sorted eigenvalues
     eig_vec = eig_vec[:, idx]  # Sort eigenvectors according to eigenvalues
@@ -43,8 +43,6 @@ def spectral_clustering(G, k):
 
 ############## Task 6
 clustering = spectral_clustering(GCC, k)
-
-
 ##################
 # your code here #
 ##################

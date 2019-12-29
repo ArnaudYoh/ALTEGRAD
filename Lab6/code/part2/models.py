@@ -24,6 +24,7 @@ class GNN(nn.Module):
         out = self.dropout(out)
 
         out = self.fc2(adj.mm(out))
+        layer2_out = out
         out = self.relu(out)
 
         out = self.fc3(adj.mm(out))
@@ -32,4 +33,4 @@ class GNN(nn.Module):
         # your code here #
         ##################
 
-        return F.log_softmax(out, dim=1)
+        return F.log_softmax(out, dim=1), layer2_out

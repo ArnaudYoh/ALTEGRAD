@@ -46,8 +46,11 @@ adj = normalize_adjacency(adj) # Normalizes the adjacency matrix
 
 
 ############## Task 12
+features = np.ones((n,n))
+
 # Set the feature of all nodes to the same value
 features = np.eye(n) # Generates node features
+
 
 # Yields indices to split data into training and test sets
 idx = np.random.RandomState(seed=42).permutation(n)

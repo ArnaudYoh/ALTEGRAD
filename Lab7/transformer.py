@@ -92,18 +92,18 @@ class Transformer(Module):
         embed_source = self.source_embedding(x)
         x_source = embed_source + self.PE_tensor[:embed_source.shape[1]]
         out_enc = self.encoder(x_source)
-        print("Out of Encoder", out_enc)
 
         if self.training and not y is None:
+            # embed_target = self.target_embedding(self.shift(y))
             embed_target = self.target_embedding(y)
         else:
+            # embed_target = self.target_embedding(self.shift(x))
             embed_target = self.target_embedding(x)
 
-        target = embed_target  + self.PE_tensor[:embed_target.shape[1]]
+        target = embed_target + self.PE_tensor[:embed_target.shape[1]]
         out_dec = self.decoder(out_enc, target)
-        # print("Out of Decoder", out_dec)
         out = self.output_linear(out_dec)
-        out = torch.softmax(out, 1)
+        out = torch.softmax(out, -1)
 
         return out
 
@@ -133,25 +133,23 @@ class Transformer(Module):
         criteron = CrossEntropyLoss()
 
         for epoch in range(n_epochs):
-            pbar = self.initialize_pbar(epoch, n_epochs, 136521)
             epoch_train_loss = []
             self.train()
-            for i, (source, target) in enumerate(train_loader):
-                source = source.to(self.device)
-                target = source.to(self.device)
-                pred = self.forward(source, target)
+            with tqdm(total=136521, unit_scale=True, postfix={'loss': 0.0}, desc="Epoch %i/%i" % (epoch + 1, n_epochs)) \
+                    as pbar:
+                for i, (source, target) in enumerate(train_loader):
+                    source = source.to(self.device)
+                    target = source.to(self.device)
+                    pred = self.forward(source, target)
 
-                optimizer.zero_grad()
-                # print("Pred", pred)
-                # print("Target", target)
-                exit(0)
-                loss = criteron(pred.flatten(end_dim=1), target.flatten())
-                loss.backward()
-                optimizer.step()
+                    optimizer.zero_grad()
+                    loss = criteron(pred.flatten(end_dim=1), target.flatten())
+                    loss.backward()
+                    optimizer.step()
 
-                pbar.update(source.size(0))
-                epoch_train_loss.append(loss.item())
-                pbar.set_postfix({"train_loss": np.mean(epoch_train_loss)})
+                    pbar.update(source.size(0))
+                    epoch_train_loss.append(loss.item())
+                    pbar.set_postfix({"train_loss": np.mean(epoch_train_loss)})
 
             # test_BLEU = self.test(test_loader, criteron)
             # pbar.set_postfix({"train_loss": np.mean(epoch_train_loss), "test_BLEU": test_BLEU})
@@ -263,22 +261,11 @@ class Transformer(Module):
         """
         pos = torch.arange(size).view(-1, 1)
         dim = []
-        for _ in range(int(dimension / 2)):
-            dim.append(np.sin(pos / (10000 ** (2 * _ / dimension))))
-            dim.append(np.cos(pos / (10000 ** ((2 * _ + 1) / dimension))))
+        for i in range(int(dimension / 2)):
+            dim.append(np.sin(pos / (10000 ** (2 * i / dimension))))
+            dim.append(np.cos(pos / (10000 ** ((2 * i + 1) / dimension))))
 
         return torch.cat(dim, 1)
-
-    @staticmethod
-    def initialize_pbar(epoch, epochs, its_per_epochs):
-        """Initializes a progress bar for the current epoch
-
-        Returns:
-            the progess bar (tqdm.tqdm)
-        """
-        return tqdm(total=its_per_epochs, unit_scale=True,
-                    desc="Epoch %i/%i" % (epoch + 1, epochs),
-                    postfix={})
 
 
 class Encoder(Sequential):
@@ -333,7 +320,6 @@ class EncoderStack(Module):
         mean = out1.mean(-1, keepdim=True)
         std = out1.std(-1, keepdim=True)
         out1 = (out1 - mean) / std
-        print(out1)
 
         out2 = self.feed_forward(out1)
         out2 = out2 + out1
@@ -404,19 +390,19 @@ class DecoderStack(Module):
         out1 = out1 + y
         mean = out1.mean(-1, keepdim=True)
         std = out1.std(-1, keepdim=True)
-        out1 = (out1 - mean) - std
+        out1 = (out1 - mean) / std
 
-        out2 = self.attention_2(y, x, x)
+        out2 = self.attention_2(out1, x, x)
         out2 = out2 + out1
         mean = out2.mean(-1, keepdim=True)
         std = out2.std(-1, keepdim=True)
-        out2 = (out2 - mean) - std
+        out2 = (out2 - mean) / std
 
-        out3 = self.feed_forward(y)
+        out3 = self.feed_forward(out2)
         out3 = out3 + out2
         mean = out3.mean(-1, keepdim=True)
         std = out3.std(-1, keepdim=True)
-        out3 = (out3 - mean) - std
+        out3 = (out3 - mean) / std
 
         return out3
 
@@ -436,13 +422,13 @@ class MultiHeadAttention(Module):
         super(MultiHeadAttention, self).__init__()
         self.dk = dk
 
-        self.Wq = torch.empty((N_heads, dmodel, dk), requires_grad=True).to(device)
-        self.Wk = torch.empty((N_heads, dmodel, dk), requires_grad=True).to(device)
-        self.Wv = torch.empty((N_heads, dmodel, dv), requires_grad=True).to(device)
-        self.Wo = torch.empty((dmodel, dmodel), requires_grad=True).to(device)
+        self.Wq = torch.ones((N_heads, dmodel, dk), requires_grad=True, device=device)
+        self.Wk = torch.ones((N_heads, dmodel, dk), requires_grad=True, device=device)
+        self.Wv = torch.ones((N_heads, dmodel, dv), requires_grad=True, device=device)
+        self.Wo = torch.ones((dmodel, dmodel), requires_grad=True, device=device)
 
-        mask = (torch.triu(torch.ones(dmodel, dk)))
-        self.mask = mask.masked_fill(mask == 1, float('-inf')).to(device)
+        mask = (torch.tril(torch.ones(dmodel, dk)))
+        self.mask = mask.masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, 0).to(device)
 
     def forward(self, Q, K, V, maskout=False):
         """ forward of a multihead attention
@@ -460,22 +446,21 @@ class MultiHeadAttention(Module):
         """
 
         if maskout:
-            WQ = torch.matmul(Q.unsqueeze(1), self.Wq + self.mask)
-            print(WQ)
-            WK = torch.matmul(K.unsqueeze(1), self.Wk + self.mask)
-            WV = torch.matmul(V.unsqueeze(1), self.Wv)
+            WqQ = torch.matmul(Q.unsqueeze(1), torch.softmax(self.Wq + self.mask.unsqueeze(0), -2))
+            WkK = torch.matmul(K.unsqueeze(1), torch.softmax(self.Wk + self.mask.unsqueeze(0), -2))
+            WvV = torch.matmul(V.unsqueeze(1), self.Wv)
 
         else:
+            WqQ = torch.matmul(Q.unsqueeze(1), self.Wq)
+            WkK = torch.matmul(K.unsqueeze(1), self.Wk)
+            WvV = torch.matmul(V.unsqueeze(1), self.Wv)
 
-            WQ = torch.matmul(Q.unsqueeze(1), self.Wq)
-            WK = torch.matmul(K.unsqueeze(1), self.Wk)
-            WV = torch.matmul(V.unsqueeze(1), self.Wv)
-
-        attn = torch.softmax(WQ.matmul(WK.transpose(3, 2)) / np.sqrt(self.dk), 2).matmul(WV)
+        attn = WqQ@WkK.transpose(3, 2)
+        attn = torch.matmul(torch.softmax(attn / np.sqrt(self.dk), -2), WvV)
         attn = attn.permute([0, 2, 1, 3])
         attn = attn.contiguous().view((-1, attn.shape[1], attn.shape[2] * attn.shape[3]))
 
-        return attn.matmul(self.Wo)
+        return torch.matmul(attn, self.Wo)
 
 
 class FeedForward(Module):
@@ -548,7 +533,7 @@ if __name__ == "__main__":
                             vocab_source=vocab_source,
                             vocab_target_inv=vocab_target_inv,
                             max_size=24, device="cuda")
-        model.fit(pairs_train, pairs_test, 10, lr=0.001)
+        model.fit(pairs_train, pairs_test, 10, lr=0.0001)
 
     to_test = ['I am a student.',
                'I have a red car.',  # inversion captured

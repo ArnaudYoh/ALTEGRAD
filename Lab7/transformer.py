@@ -74,7 +74,7 @@ class Transformer(Module):
                                ff_inner_dim, device)
         self.output_linear = Linear(dmodel, self.vocab_size_target).to(device)
 
-        self.PE_tensor = self.build_encoding(max_size, dmodel).to(device)
+        self.PE_tensor = self.build_encoding(max_size, dmodel).to(device).float()
 
         self.device = device
 
@@ -90,17 +90,18 @@ class Transformer(Module):
             (B x T x target_vocab_size) the probability distribution over the target vocab.
         """
         embed_source = self.source_embedding(x)
-        x_source = embed_source + self.PE_tensor[:embed_source.shape[1]].float()
+        x_source = embed_source + self.PE_tensor[:embed_source.shape[1]]
         out_enc = self.encoder(x_source)
+        print("Out of Encoder", out_enc)
 
         if self.training and not y is None:
             embed_target = self.target_embedding(y)
         else:
             embed_target = self.target_embedding(x)
 
-        target = torch.matmul(embed_target.double().unsqueeze(2), self.PE_tensor.transpose(0, 1)).squeeze()
+        target = embed_target  + self.PE_tensor[:embed_target.shape[1]]
         out_dec = self.decoder(out_enc, target)
-
+        # print("Out of Decoder", out_dec)
         out = self.output_linear(out_dec)
         out = torch.softmax(out, 1)
 
@@ -141,6 +142,9 @@ class Transformer(Module):
                 pred = self.forward(source, target)
 
                 optimizer.zero_grad()
+                # print("Pred", pred)
+                # print("Target", target)
+                exit(0)
                 loss = criteron(pred.flatten(end_dim=1), target.flatten())
                 loss.backward()
                 optimizer.step()
@@ -150,7 +154,8 @@ class Transformer(Module):
                 pbar.set_postfix({"train_loss": np.mean(epoch_train_loss)})
 
             # test_BLEU = self.test(test_loader, criteron)
-            pbar.set_postfix({"train_loss": np.mean(epoch_train_loss), "test_BLEU": test_BLEU})
+            # pbar.set_postfix({"train_loss": np.mean(epoch_train_loss), "test_BLEU": test_BLEU})
+            pbar.set_postfix({"train_loss": np.mean(epoch_train_loss)})
 
         self.save(save_path)
 
@@ -164,7 +169,7 @@ class Transformer(Module):
         self.eval()
         BLEU = []
         for i, (source, target) in enumerate(test_loader):
-            print(target[0, :])
+            # print(target[0, :])
             source = source.to(self.device)
             target = source.to(self.device)
             pred = self.forward(source)
@@ -327,13 +332,14 @@ class EncoderStack(Module):
         out1 = out1 + x
         mean = out1.mean(-1, keepdim=True)
         std = out1.std(-1, keepdim=True)
-        out1 = (out1 - mean) - std
+        out1 = (out1 - mean) / std
+        print(out1)
 
         out2 = self.feed_forward(out1)
         out2 = out2 + out1
         mean = out2.mean(-1, keepdim=True)
         std = out2.std(-1, keepdim=True)
-        out2 = (out2 - mean) - std
+        out2 = (out2 - mean) / std
 
         return out2
 
@@ -363,16 +369,16 @@ class Decoder(Sequential):
         inputs.
         """
         for module in self.children():
-            x, y = module(x, y)
+            y = module(x, y)
 
-        return x, y
+        return y
 
 
 class DecoderStack(Module):
     """ One stack of decoder as shown in the original paper """
 
     def __init__(self, N_heads, dk, dv, dmodel, ff_inner_dim, device):
-        """ Initializes the deocder stack.
+        """ Initializes the decoder stack.
 
         Args:
             N_heads (int): The number of attention heads.
@@ -436,7 +442,7 @@ class MultiHeadAttention(Module):
         self.Wo = torch.empty((dmodel, dmodel), requires_grad=True).to(device)
 
         mask = (torch.triu(torch.ones(dmodel, dk)))
-        self.mask = mask.masked_fill(mask == 1, float('-inf'))
+        self.mask = mask.masked_fill(mask == 1, float('-inf')).to(device)
 
     def forward(self, Q, K, V, maskout=False):
         """ forward of a multihead attention
@@ -455,13 +461,9 @@ class MultiHeadAttention(Module):
 
         if maskout:
             WQ = torch.matmul(Q.unsqueeze(1), self.Wq + self.mask)
-            WQ = WQ.view((-1, WQ.shape[1] * WQ.shape[2], WQ.shape[3]))
-
+            print(WQ)
             WK = torch.matmul(K.unsqueeze(1), self.Wk + self.mask)
-            WK = WK.view((-1, WK.shape[1] * WK.shape[2], WK.shape[3]))
-
             WV = torch.matmul(V.unsqueeze(1), self.Wv)
-            WV = WQ.view((-1, WV.shape[1] * WV.shape[2], WV.shape[3]))
 
         else:
 
@@ -469,13 +471,11 @@ class MultiHeadAttention(Module):
             WK = torch.matmul(K.unsqueeze(1), self.Wk)
             WV = torch.matmul(V.unsqueeze(1), self.Wv)
 
-        partial = torch.softmax(WQ.matmul(WK.transpose(3, 2)) / np.sqrt(self.dk), 2).matmul(WV)
-        print(partial.shape)
-        partial = partial.permute([0, 2, 1, 3])
-        partial = partial.view((-1, partial.shape[1], 1, partial.shape[2] * partial.shape[3])).squeeze()
-        print(partial)
+        attn = torch.softmax(WQ.matmul(WK.transpose(3, 2)) / np.sqrt(self.dk), 2).matmul(WV)
+        attn = attn.permute([0, 2, 1, 3])
+        attn = attn.contiguous().view((-1, attn.shape[1], attn.shape[2] * attn.shape[3]))
 
-        return partial.matmul(self.Wo)
+        return attn.matmul(self.Wo)
 
 
 class FeedForward(Module):

@@ -128,7 +128,6 @@ class Transformer(Module):
         test_loader = DataLoader(Dataset(pairs_test), batch_size=batch_size,
                                  shuffle=True, collate_fn=self.my_pad)
 
-
         optimizer = torch.optim.Adam(self.parameters(), lr)
         criteron = CrossEntropyLoss()
 
@@ -455,7 +454,7 @@ class MultiHeadAttention(Module):
             WkK = torch.matmul(K.unsqueeze(1), self.Wk)
             WvV = torch.matmul(V.unsqueeze(1), self.Wv)
 
-        attn = WqQ@WkK.transpose(3, 2)
+        attn = WqQ @ WkK.transpose(3, 2)
         attn = torch.matmul(torch.softmax(attn / np.sqrt(self.dk), -2), WvV)
         attn = attn.permute([0, 2, 1, 3])
         attn = attn.contiguous().view((-1, attn.shape[1], attn.shape[2] * attn.shape[3]))
